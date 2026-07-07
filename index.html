@@ -586,6 +586,12 @@
       from { opacity: 0; transform: translateY(-10px) scale(0.85); }
       to   { opacity: 1; transform: translateY(0) scale(1); }
     }
+    /* tutorial: all "−2" arrows pulse together ("we keep subtracting the same number") */
+    .hint-arrow.glow img { animation: hintArrowGlow 0.9s ease-in-out infinite; }
+    @keyframes hintArrowGlow {
+      0%,100% { filter: drop-shadow(0 0 7px  rgba(12,228,249,.85)); transform: scale(1); }
+      50%     { filter: drop-shadow(0 0 22px rgba(12,228,249,1)) brightness(1.22); transform: scale(1.07); }
+    }
 
     /* ════════════════════════════════════════════
        LEVEL INTRO SCREEN
@@ -1761,11 +1767,13 @@
     if (b) { b.classList.add('armed'); b.classList.remove('used'); }
   }
 
-  /* clear all hint state — called on new slot / level / reset */
+  /* clear all hint state — called on new slot / level / reset.
+     During the Level 1 tutorial the "−2" arrows stay pinned as a guide, so we keep them. */
   function resetHint() {
     hintArmed = false;
     const b = document.getElementById('hint-btn');
     if (b) b.classList.remove('armed', 'used');
+    if (tutorialMode) return;
     const w = document.getElementById('hint-arrows');
     if (w) { w.classList.add('hidden'); w.innerHTML = ''; }
   }
@@ -1988,24 +1996,121 @@
     });
   }
 
-  /* ── "Read the pattern together" ───────────────────
-     Highlight each shown (prefilled) switch left→right, speaking its number when a voice
-     clip exists, with a soft rising blip. Calls done() when the last one has been read. */
-  function readPatternAloud(done) {
-    const cfg   = ROWS_CONFIG[currentRow];
-    const shown = cfg.prefilled.slice().sort((a, b) => a - b);
-    const sws   = document.querySelectorAll('#switch-row .sw');
+  /* ══════════════════════════════════════════════════
+     LEVEL 1 TUTORIAL  (only the first level is a guided tutorial)
+     ══════════════════════════════════════════════════ */
+  let tutorialMode = false;
+
+  /* read the shown numbers left→right: pop each switch and build up the spoken text
+     ("16" → "16, 14" → …). Calls done() when finished. */
+  function tutorialReadNumbers(indices, done) {
+    const cfg = ROWS_CONFIG[currentRow];
+    const sws = document.querySelectorAll('#switch-row .sw');
+    const bt  = document.getElementById('bot-text');
+    bt.textContent = '';
     let k = 0;
     const readNext = () => {
-      if (k >= shown.length) { setTimeout(() => { if (done) done(); }, 400); return; }
-      const el = sws[shown[k]];
+      if (k >= indices.length) { setTimeout(() => { if (done) done(); }, 500); return; }
+      const el = sws[indices[k]];
       if (el) { el.classList.remove('read-pop'); void el.offsetWidth; el.classList.add('read-pop'); }
-      playNumberVoice(cfg.seq[shown[k]]);   /* speaks the number if a clip exists, else silent */
+      bt.textContent += (k ? ', ' : '') + cfg.seq[indices[k]];
+      playNumberVoice(cfg.seq[indices[k]]);
       sfxPop(540 + k * 28);
       k++;
-      setTimeout(readNext, 820);
+      setTimeout(readNext, 800);
     };
     readNext();
+  }
+
+  /* build one "−N" hop arrow over the gap after switch i (between switch i and i+1) */
+  function makeHopArrow(cfg, i) {
+    const count = cfg.seq.length;
+    const step  = cfg.seq[1] - cfg.seq[0];
+    const src   = HINT_ARROW_SRC[step] || HINT_ARROW_SRC['2'];
+    const AW    = 120;
+    const mid   = switchCenterX(i, count) + SW_PITCH / 2;
+    const a = document.createElement('div');
+    a.className = 'hint-arrow';
+    a.style.left  = (mid - AW / 2) + 'px';
+    a.style.top   = '72px';
+    a.style.width = AW + 'px';
+    const img = document.createElement('img');
+    img.src = src; img.alt = (step > 0 ? '+' : '') + step;
+    a.appendChild(img);
+    return a;
+  }
+
+  /* reveal "−2" arrows over the given gaps, one by one, then call done() */
+  function tutorialShowArrows(gaps, done) {
+    const wrap = document.getElementById('hint-arrows');
+    wrap.classList.remove('hidden');
+    const cfg = ROWS_CONFIG[currentRow];
+    let k = 0;
+    const showNext = () => {
+      if (k >= gaps.length) { if (done) done(); return; }
+      wrap.appendChild(makeHopArrow(cfg, gaps[k]));
+      sfxPop(620 + k * 25);
+      k++;
+      setTimeout(showNext, 620);
+    };
+    showNext();
+  }
+
+  function glowAllArrows() {
+    document.querySelectorAll('#hint-arrows .hint-arrow').forEach(a => a.classList.add('glow'));
+  }
+
+  /* the −2 arrows over the empty answer slots; revealed one at a time as the player
+     places each correct switch, so the arrow "proceeds" with the pattern. */
+  let tutorialAnswerGaps = [];
+  function tutorialAdvanceArrow(n) {
+    if (!tutorialMode || n < 0 || n >= tutorialAnswerGaps.length) return;
+    const wrap = document.getElementById('hint-arrows');
+    if (!wrap || wrap.querySelector('[data-gap="' + tutorialAnswerGaps[n] + '"]')) return;
+    const a = makeHopArrow(ROWS_CONFIG[currentRow], tutorialAnswerGaps[n]);
+    a.dataset.gap = tutorialAnswerGaps[n];
+    wrap.appendChild(a);                       /* pops in via hintArrowIn */
+    sfxPop(660);
+    setTimeout(() => a.classList.add('glow'), 450);   /* then joins the glow */
+  }
+
+  /* the full Level 1 tutorial script, chained through the voice queue */
+  function runLevel1Tutorial() {
+    tutorialMode = true;
+    const cfg   = ROWS_CONFIG[0];
+    const shown = cfg.prefilled.slice().sort((a, b) => a - b);   /* [0,1,2,3,4] */
+    const shownGaps  = shown.slice(0, -1);                       /* [0,1,2,3] — between shown numbers */
+    const answerGaps = [];                                        /* [4,5,6] — into the empty answer slots */
+    for (let i = shown[shown.length - 1]; i < cfg.seq.length - 1; i++) answerGaps.push(i);
+
+    const wrap = document.getElementById('hint-arrows');
+    wrap.classList.remove('hidden'); wrap.innerHTML = '';
+
+    queueBotText('Let us start fixing the switches.');
+    queueBotText('These switches are in a pattern.');
+    queueBotText('Let us read the pattern together.');
+    /* read: "16, 14, 12, 10, 8" — popping each shown switch */
+    queueAction(finish => tutorialReadNumbers(shown, finish));
+    /* "We are subtracting 2 at each step." — show −2 arrows over the shown gaps one by one */
+    queueAction(finish => {
+      _typeBotText('We are subtracting 2 at each step.');
+      tutorialShowArrows(shownGaps, () => setTimeout(finish, 700));
+    });
+    /* "We keep subtracting the same number!" — glow all the arrows together */
+    queueAction(finish => {
+      _typeBotText('We keep subtracting the same number!');
+      glowAllArrows();
+      setTimeout(finish, 2200);
+    });
+    /* "Tap the correct switch to continue the pattern." — reveal ONLY the arrow into the
+       first empty slot; the rest proceed as the player places each correct switch. */
+    queueAction(finish => {
+      _typeBotText('Tap the correct switch to continue the pattern.');
+      glowAllArrows();                 /* the shown-number arrows all glow */
+      tutorialAnswerGaps = answerGaps;
+      tutorialAdvanceArrow(0);         /* arrow into the current (first) answer slot */
+      setTimeout(finish, 800);
+    });
   }
 
   /* ── Game flow ─────────────────────────────────── */
@@ -2115,12 +2220,8 @@
           botBar.classList.add('bar-reveal');
           sfxBarOpen();
           setTimeout(() => {
-            /* scripted intro: greet, explain the pattern, then read it together */
-            queueBotText('Let us start fixing the switches.');
-            queueBotText('These switches are in a pattern.');
-            queueBotText('Let us read the pattern together.');
-            queueAction(readPatternAloud);
-            queueBotText('Tap the correct switch.', voiceTapCorrect);
+            /* Level 1 is a guided tutorial (only the first level) */
+            runLevel1Tutorial();
           }, 450);
         }, 750);
       }, 560 + 1400);   /* after the box-deploy animation (1.4s) finishes */
@@ -2133,12 +2234,12 @@
     if (timer) clearTimeout(timer);
     phase = 'question';
 
-    /* drop the previous level's spoken line; the bar reads the fresh pattern once the
-       blast doors open (queued below). Start blank so the line types in cleanly. */
+    /* drop the previous level's spoken line and show the fresh instruction right away
+       (levels 2+ are normal gameplay — no tutorial reading). */
     clearVoiceQueue();
     stopConfetti();
-    document.getElementById('bot-text').textContent = '';
-    _setOptionsLock(true);   /* keep options locked until the read + prompt finishes */
+    tutorialMode = false;   /* only Level 1 is the tutorial */
+    document.getElementById('bot-text').textContent = 'Tap the correct switch.';
 
     /* clear the previous level's completion state — everything else stays put */
     const sq = document.getElementById('screen-question');
@@ -2176,11 +2277,6 @@
         sfxPop(700);
         setTimeout(() => optArea.classList.remove('reveal'), 1400);
       }, 560 + 1400);
-      /* read the new level's pattern together, then prompt the tap (options stay locked
-         until the reading finishes, courtesy of the voice queue) */
-      queueBotText('Let us read the pattern together.');
-      queueAction(readPatternAloud);
-      queueBotText('Tap the correct switch.', voiceTapCorrect);
     }, 1150);   /* wait for the blast doors to open before deploying the options */
   }
 
@@ -2202,6 +2298,10 @@
 
       if (grid[currentRow].length >= getUserPositions(cfg).length) {
         _setOptionsLock(true);
+        /* tutorial finished for this level — drop the pinned "−2" arrows */
+        tutorialMode = false;
+        const _ha = document.getElementById('hint-arrows');
+        if (_ha) { _ha.classList.add('hidden'); _ha.innerHTML = ''; }
         sfxCorrect();
         phase = 'question';
         justPlaced = true; renderQuestion(); justPlaced = false;
@@ -2240,6 +2340,8 @@
         sfxCorrect();
         phase = 'question';
         justPlaced = true; renderQuestion(); justPlaced = false;
+        /* tutorial: the −2 arrow proceeds to the next empty slot on a correct pick */
+        if (tutorialMode) tutorialAdvanceArrow(grid[currentRow].length);
       }
     } else {
       sfxWrong();
