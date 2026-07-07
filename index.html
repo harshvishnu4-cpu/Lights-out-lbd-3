@@ -1008,7 +1008,7 @@
     <!-- Top text bar -->
     <div id="bot-bar">
       <img class="frame" src="assets/figma/textbox.webp" alt="" />
-      <span id="bot-text">Tap the correct switch.</span>
+      <span id="bot-text"></span>
     </div>
 
     <!-- Power button (top-right) -->
@@ -1671,12 +1671,12 @@
      shown from the start; the player fills the remaining slots (in order) by tapping the
      correct option. `options` are the 4 tiles shown below (one is a distractor). */
   const ROWS_CONFIG = [
-    { seq: [14, 12, 10, 8, 6, 4, 2],    prefilled: [0, 1, 2, 3], options: [6, 2, 7, 4],   label: 'Level 1' },
-    { seq: [15, 13, 11, 9, 7, 5, 3],    prefilled: [0, 1, 2, 3], options: [5, 7, 3, 8],   label: 'Level 2' },
-    { seq: [35, 30, 25, 20, 15, 10, 5], prefilled: [0, 1, 2, 3], options: [0, 10, 15, 5], label: 'Level 3' },
-    { seq: [80, 70, 60, 50, 40, 30, 20], prefilled: [0, 1, 2, 4], options: [30, 20, 10, 50], label: 'Level 4' },
+    { seq: [16, 14, 12, 10, 8, 6, 4, 2],     prefilled: [0, 1, 2, 3, 4], options: [6, 4, 2, 5],    label: 'Level 1' },
+    { seq: [15, 13, 11, 9, 7, 5, 3, 1],      prefilled: [0, 1, 2, 3, 4], options: [5, 3, 1, 6],    label: 'Level 2' },
+    { seq: [40, 35, 30, 25, 20, 15, 10, 5],  prefilled: [0, 1, 2, 3, 4], options: [15, 10, 5, 8],  label: 'Level 3' },
+    { seq: [80, 70, 60, 50, 40, 30, 20, 10], prefilled: [0, 1, 2, 3, 4], options: [30, 20, 10, 15], label: 'Level 4' },
   ];
-  const TOTAL = 7;
+  const TOTAL = 8;
   const SWITCH_OFFSET_MS = 3850;   /* wait for the box to open + the pipe & power to appear */
   const SWITCH_STEP_MS   = 340;    /* gap between each switch dropping in */
 
@@ -1929,7 +1929,7 @@
     /* main panel border turns green on a correct, completed pattern (Figma success screen) */
     document.getElementById('panel-frame').src = patternDone ? 'assets/figma/panel-green.webp' : 'assets/figma/panel.webp';
 
-    /* ── 7 switch slots ── */
+    /* ── switch slots (one per number in the level's sequence) ── */
     const stepMs    = SWITCH_STEP_MS;
     const offsetMs  = SWITCH_OFFSET_MS;
     const prefilled = new Set(cfg.prefilled);
@@ -1986,6 +1986,26 @@
                            : 'option';
       optArea.appendChild(makeSw(opt, cls, isWrongOption ? null : () => handleAnswer(opt)));
     });
+  }
+
+  /* ── "Read the pattern together" ───────────────────
+     Highlight each shown (prefilled) switch left→right, speaking its number when a voice
+     clip exists, with a soft rising blip. Calls done() when the last one has been read. */
+  function readPatternAloud(done) {
+    const cfg   = ROWS_CONFIG[currentRow];
+    const shown = cfg.prefilled.slice().sort((a, b) => a - b);
+    const sws   = document.querySelectorAll('#switch-row .sw');
+    let k = 0;
+    const readNext = () => {
+      if (k >= shown.length) { setTimeout(() => { if (done) done(); }, 400); return; }
+      const el = sws[shown[k]];
+      if (el) { el.classList.remove('read-pop'); void el.offsetWidth; el.classList.add('read-pop'); }
+      playNumberVoice(cfg.seq[shown[k]]);   /* speaks the number if a clip exists, else silent */
+      sfxPop(540 + k * 28);
+      k++;
+      setTimeout(readNext, 820);
+    };
+    readNext();
   }
 
   /* ── Game flow ─────────────────────────────────── */
@@ -2080,17 +2100,26 @@
         optArea.classList.remove('hidden-initially');
         void optArea.offsetWidth;
         optArea.classList.add('reveal');
+        _setOptionsLock(true);   /* lock immediately so no tap lands before the intro speaks */
         sfxPop(700);   /* single pop — all four options appear together */
         setTimeout(() => optArea.classList.remove('reveal'), 1400);
 
         /* 4 — finally the text box slides in, THEN the bot speaks */
         setTimeout(() => {
+          /* clear any leftover text + keep options locked so the bar reveals blank
+             (no stale "Tap the correct switch." flash before the intro types) */
+          document.getElementById('bot-text').textContent = '';
+          _setOptionsLock(true);
           botBar.classList.remove('bar-hidden');
           void botBar.offsetWidth;
           botBar.classList.add('bar-reveal');
           sfxBarOpen();
           setTimeout(() => {
-            /* direct gameplay — no tutorial; every level just prompts the tap */
+            /* scripted intro: greet, explain the pattern, then read it together */
+            queueBotText('Let us start fixing the switches.');
+            queueBotText('These switches are in a pattern.');
+            queueBotText('Let us read the pattern together.');
+            queueAction(readPatternAloud);
             queueBotText('Tap the correct switch.', voiceTapCorrect);
           }, 450);
         }, 750);
@@ -2104,11 +2133,12 @@
     if (timer) clearTimeout(timer);
     phase = 'question';
 
-    /* drop the previous level's spoken line and show the fresh instruction right away,
-       so when the blast doors open the bar already reads "Tap the correct switch." */
+    /* drop the previous level's spoken line; the bar reads the fresh pattern once the
+       blast doors open (queued below). Start blank so the line types in cleanly. */
     clearVoiceQueue();
     stopConfetti();
-    document.getElementById('bot-text').textContent = 'Tap the correct switch.';
+    document.getElementById('bot-text').textContent = '';
+    _setOptionsLock(true);   /* keep options locked until the read + prompt finishes */
 
     /* clear the previous level's completion state — everything else stays put */
     const sq = document.getElementById('screen-question');
@@ -2146,6 +2176,11 @@
         sfxPop(700);
         setTimeout(() => optArea.classList.remove('reveal'), 1400);
       }, 560 + 1400);
+      /* read the new level's pattern together, then prompt the tap (options stay locked
+         until the reading finishes, courtesy of the voice queue) */
+      queueBotText('Let us read the pattern together.');
+      queueAction(readPatternAloud);
+      queueBotText('Tap the correct switch.', voiceTapCorrect);
     }, 1150);   /* wait for the blast doors to open before deploying the options */
   }
 
