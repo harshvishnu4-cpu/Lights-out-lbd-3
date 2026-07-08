@@ -293,17 +293,8 @@
       border: 4px solid #a3fffc;
       border-radius: 11px;
     }
-    /* active "place here" slot — cyan glow per the Figma design (#69f4f9 layered) */
-    .sw.empty.next-slot {
-      border: 4px solid #a3fffc;
-      box-shadow:
-        0 0 3px #69f4f9,
-        0 0 6px #69f4f9,
-        0 0 21px #69f4f9,
-        0 0 42px rgba(105,244,249,0.85),
-        0 0 72px rgba(105,244,249,0.6),
-        0 0 125px rgba(105,244,249,0.45);
-    }
+    /* active "place here" slot — no glow (empty slots all look the same now) */
+    .sw.empty.next-slot { border: 4px solid #a3fffc; }
 
     @keyframes wrongGlowPulse {
       0%   { box-shadow: 0 0 0 0 rgba(255,200,60,0);           outline-color: rgba(255,210,90,.4); }
@@ -592,20 +583,11 @@
       50%     { filter: drop-shadow(0 0 22px rgba(12,228,249,1)) brightness(1.22); transform: scale(1.07); }
     }
 
-    /* tutorial hand nudge — fingertip (37.5% x, 0% y of the art) lands on the switch centre */
-    #tutorial-hand {
-      position: absolute;
-      left: 23%; top: 55%;
-      width: 78px; height: auto;
-      pointer-events: none;
-      z-index: 40;
-      transform-origin: 37.5% 0%;   /* pivot at the fingertip for the tap */
-      filter: drop-shadow(0 6px 10px rgba(0,0,0,.55));
-      animation: handNudge 1.05s ease-in-out infinite;
-    }
-    @keyframes handNudge {
-      0%,100% { transform: translateY(0)    scale(1);    }
-      45%     { transform: translateY(12px) scale(0.93); }
+    /* tutorial guide — the correct option glows to show the player which switch to tap */
+    .sw.tut-guide .tile {
+      outline: 3px solid #00e5ff;
+      border-radius: 8px;
+      animation: hintGlow 1s ease-in-out infinite;
     }
 
     /* ════════════════════════════════════════════
@@ -2060,27 +2042,18 @@
     setTimeout(() => a.classList.add('glow'), 450);   /* then joins the glow */
   }
 
-  /* tutorial hand nudge — points at (and taps) the correct option to guide the player.
-     Re-attached after every render since renderQuestion rebuilds the option row. */
-  function hideTutorialHand() {
-    const h = document.getElementById('tutorial-hand');
-    if (h) h.remove();
+  /* tutorial guide — glow the correct option so the player knows which switch to tap.
+     Re-applied after every render since renderQuestion rebuilds the option row. */
+  function hideTutorialGuide() {
+    document.querySelectorAll('#options-area .sw.tut-guide').forEach(el => el.classList.remove('tut-guide'));
   }
-  function showTutorialHand() {
-    hideTutorialHand();
+  function showTutorialGuide() {
+    hideTutorialGuide();
     if (!tutorialMode || phase !== 'question') return;
     const cfg = ROWS_CONFIG[currentRow];
     const correct = getCorrect(cfg, grid[currentRow].length);
     const opts = document.querySelectorAll('#options-area .sw');
-    let target = null;
-    cfg.options.forEach((opt, i) => { if (opt === correct && opts[i]) target = opts[i]; });
-    if (!target) return;
-    const host = target.querySelector('.tile') || target;
-    const hand = document.createElement('img');
-    hand.id = 'tutorial-hand';
-    hand.src = 'assets/nudge.webp';
-    hand.alt = '';
-    host.appendChild(hand);
+    cfg.options.forEach((opt, i) => { if (opt === correct && opts[i]) opts[i].classList.add('tut-guide'); });
   }
 
   /* the full Level 1 tutorial script, chained through the voice queue */
@@ -2117,7 +2090,7 @@
       _typeBotText('Tap the correct switch to continue the pattern.');
       glowAllArrows();                 /* the shown-number arrows all glow */
       tutorialAnswerGaps = answerGaps; /* answer arrows reveal one-per-correct-tap, none up front */
-      setTimeout(() => { finish(); showTutorialHand(); }, 800);   /* hand nudges the correct option */
+      setTimeout(() => { finish(); showTutorialGuide(); }, 800);   /* glow the correct option */
     });
   }
 
@@ -2254,7 +2227,7 @@
     clearVoiceQueue();
     stopConfetti();
     tutorialMode = false;   /* only Level 1 is the tutorial */
-    hideTutorialHand();
+    hideTutorialGuide();
     document.getElementById('bot-text').textContent = 'Tap the correct switch.';
 
     /* clear the previous level's completion state — everything else stays put */
@@ -2318,7 +2291,7 @@
            completed pattern (they clear when the next level loads). */
         if (tutorialMode) tutorialAdvanceArrow(grid[currentRow].length - 1);
         tutorialMode = false;
-        hideTutorialHand();
+        hideTutorialGuide();
         sfxCorrect();
         phase = 'question';
         justPlaced = true; renderQuestion(); justPlaced = false;
@@ -2358,7 +2331,7 @@
         phase = 'question';
         justPlaced = true; renderQuestion(); justPlaced = false;
         /* tutorial: reveal the −2 arrow for the slot just filled, then move the hand on */
-        if (tutorialMode) { tutorialAdvanceArrow(grid[currentRow].length - 1); showTutorialHand(); }
+        if (tutorialMode) { tutorialAdvanceArrow(grid[currentRow].length - 1); showTutorialGuide(); }
       }
     } else {
       /* Incorrect: feedback lives only on the tapped OPTION tile — sparks + shake + yellow
@@ -2367,14 +2340,14 @@
       sfxWrong();
       wrongAnswer = val; streak = 0; wrongCount++;
       phase = 'wrong';
-      hideTutorialHand();            /* hide the nudge during the wrong-shake */
+      hideTutorialGuide();           /* clear the guide glow during the wrong-shake */
       renderQuestion();
       spawnSparks(document.querySelector('#options-area .sw.wrong-option .tile'));
       timer = setTimeout(() => {
         wrongAnswer = null; phase = 'question';
         if (wrongCount >= 2 && !showHint) armHint();   /* arm the hint bulb silently after 2 wrong */
         renderQuestion();
-        if (tutorialMode) showTutorialHand();          /* bring the nudge back for the retry */
+        if (tutorialMode) showTutorialGuide();         /* restore the guide glow for the retry */
       }, 800);
     }
   }
@@ -2527,7 +2500,7 @@
     wrongCount = 0; wrongAnswer = null;
     showHint = false; score = 0; streak = 0;
     _started = false; tutorialMode = false;
-    resetHint(); hideTutorialHand(); initGrid();
+    resetHint(); hideTutorialGuide(); initGrid();
     showScreen('intro');
     /* on the title after a win, swap Play → Play Again */
     document.getElementById('btn-play').classList.add('hidden');
