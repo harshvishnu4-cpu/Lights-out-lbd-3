@@ -306,15 +306,13 @@
     }
 
     @keyframes wrongGlowPulse {
-      0%   { box-shadow: 0 0 0 0 rgba(255,40,40,0);          outline-color: rgba(255,70,70,.35); }
-      16%  { box-shadow: 0 0 34px 12px rgba(255,45,45,.98), 0 0 68px 26px rgba(255,0,0,.55); outline-color: #ff5050; }
-      100% { box-shadow: 0 0 18px 4px rgba(255,45,45,.7);   outline-color: #ff3333; }
+      0%   { box-shadow: 0 0 0 0 rgba(255,200,60,0);           outline-color: rgba(255,210,90,.4); }
+      16%  { box-shadow: 0 0 34px 12px rgba(255,190,50,.98), 0 0 68px 26px rgba(255,150,20,.55); outline-color: #ffd24d; }
+      100% { box-shadow: 0 0 18px 4px rgba(255,190,50,.7);    outline-color: #ffcc33; }
     }
-    .sw.wrong { animation: shake 0.45s ease; }
     .sw.wrong-option { animation: shake 0.45s ease; }
-    .sw.wrong .tile,
     .sw.wrong-option .tile {
-      outline: 3px solid #ff3333;
+      outline: 3px solid #ffcc33;
       border-radius: 8px;
       animation: wrongGlowPulse 0.8s ease-out both;
     }
@@ -558,14 +556,15 @@
       pointer-events: none;   /* inert until armed after 2 wrong taps */
       transition: opacity .25s ease, transform .12s ease;
     }
-    #hint-btn img { display: block; width: 100%; height: 100%; }
+    /* bulb art is cyan by default — tint it yellow */
+    #hint-btn img { display: block; width: 100%; height: 100%; filter: hue-rotate(-135deg) saturate(1.5) brightness(1.05); }
     #hint-btn.armed { opacity: 1; pointer-events: auto; animation: hintBtnGlow 1.1s ease-in-out infinite; }
     #hint-btn.armed:hover  { transform: scale(1.07); }
     #hint-btn.armed:active { transform: scale(0.94); }
     #hint-btn.used { opacity: .4; pointer-events: none; animation: none; }
     @keyframes hintBtnGlow {
-      0%,100% { box-shadow: 0 0 6px rgba(12,228,249,.5); }
-      50%     { box-shadow: 0 0 26px 6px rgba(12,228,249,.95); }
+      0%,100% { box-shadow: 0 0 6px rgba(255,205,60,.5); }
+      50%     { box-shadow: 0 0 26px 6px rgba(255,205,60,.95); }
     }
     /* hide the bulb during the level-entrance cascade — it fades in with the rest */
     #screen-question.intro #hint-btn { opacity: 0; }
@@ -591,6 +590,22 @@
     @keyframes hintArrowGlow {
       0%,100% { filter: drop-shadow(0 0 7px  rgba(12,228,249,.85)); transform: scale(1); }
       50%     { filter: drop-shadow(0 0 22px rgba(12,228,249,1)) brightness(1.22); transform: scale(1.07); }
+    }
+
+    /* tutorial hand nudge — fingertip (37.5% x, 0% y of the art) lands on the switch centre */
+    #tutorial-hand {
+      position: absolute;
+      left: 23%; top: 55%;
+      width: 78px; height: auto;
+      pointer-events: none;
+      z-index: 40;
+      transform-origin: 37.5% 0%;   /* pivot at the fingertip for the tap */
+      filter: drop-shadow(0 6px 10px rgba(0,0,0,.55));
+      animation: handNudge 1.05s ease-in-out infinite;
+    }
+    @keyframes handNudge {
+      0%,100% { transform: translateY(0)    scale(1);    }
+      45%     { transform: translateY(12px) scale(0.93); }
     }
 
     /* ════════════════════════════════════════════
@@ -967,19 +982,6 @@
       width: 96px; height: 130px;
     }
     .end-row .tile-num { font-size: 58px; }
-
-    /* Play Again reuses the themed .btn-start look (see below), re-sized + repositioned */
-    #end-play-again {
-      position: absolute;
-      bottom: 64px; left: 50%;
-      width: 360px; height: 86px;
-      transform: translateX(-50%);
-      animation: fadeIn 0.5s ease both;   /* no float here; the rim keeps its glow pulse */
-    }
-    #end-play-again .lbl { font-size: 30px; letter-spacing: 3px; padding-left: 0; }
-    #end-play-again .lbl::before { content: '\21BB'; font-size: 28px; transform: translateY(0); }
-    #end-play-again:hover { transform: translateX(-50%) scale(1.04); }
-    #end-play-again:active { transform: translateX(-50%) scale(0.97); }
   </style>
 </head>
 <body>
@@ -989,8 +991,11 @@
   <!-- ── INTRO ─────────────────────────────────── -->
   <div id="screen-intro">
     <img id="title-screen-img" src="assets/title screen.webp" alt="Lights Out" />
-    <button class="btn-play" onclick="handleStart()" aria-label="Play">
+    <button class="btn-play" id="btn-play" onclick="handleStart()" aria-label="Play">
       <img src="assets/play button.webp" alt="Play" />
+    </button>
+    <button class="btn-play hidden" id="btn-play-again" onclick="handleStart()" aria-label="Play Again">
+      <img src="assets/play again.webp" alt="Play Again" />
     </button>
   </div>
 
@@ -1090,10 +1095,6 @@
   <!-- ── COMPLETE ──────────────────────────────── -->
   <div id="screen-complete" class="hidden">
     <video id="end-video" src="assets/end-video.webm" playsinline preload="auto"></video>
-    <button id="end-play-again" class="btn-start hidden" onclick="resetGame()" aria-label="Play Again">
-      <span class="shine"></span>
-      <span class="lbl">Play Again</span>
-    </button>
   </div>
 
   <!-- ── Confetti burst (energy shards / sparks on pattern complete) ── -->
@@ -1894,10 +1895,9 @@
     if (!isRowComplete) panel.classList.remove('well-done-active');
     document.getElementById('screen-question').classList.toggle('celebrating', isRowComplete);
 
-    /* Vent bars react to input: red on a wrong answer, green on a correct placement */
-    const ventWrong = phase === 'wrong' || phase === 'wrong-second';
-    panel.classList.toggle('vent-wrong', ventWrong);
-    panel.classList.toggle('vent-correct', !ventWrong && justPlaced);
+    /* Vent bars glow green on a correct placement; no red flash on a wrong tap */
+    panel.classList.remove('vent-wrong');
+    panel.classList.toggle('vent-correct', justPlaced);
     botBar.style.visibility = isRowComplete ? 'hidden' : 'visible';
 
     /* Well done overlay — reveal handled by the timer in handleAnswer */
@@ -1906,22 +1906,13 @@
       wellDoneEl.classList.add('hidden');
     }
 
-    /* Wrong answer overlay */
-    const wrongEl = document.getElementById('wrong-msg');
-    if (phase === 'wrong') {
-      wrongEl.classList.remove('hidden');
-      wrongEl.style.animation = 'none';
-      wrongEl.offsetHeight;
-      wrongEl.style.animation = '';
-    } else {
-      wrongEl.classList.add('hidden');
-    }
+    /* wrong feedback lives entirely on the tapped option tile — no overlay */
+    document.getElementById('wrong-msg').classList.add('hidden');
 
     /* ── Switch row container ── */
     const swRow = document.getElementById('switch-row');
     swRow.innerHTML = '';
-    swRow.classList.toggle('shaking', phase === 'wrong');
-    if (phase === 'wrong') { void swRow.offsetWidth; }
+    swRow.classList.remove('shaking');   /* wrong feedback is on the option tile, not the row */
 
     const userPositions = getUserPositions(cfg);
     const rowFull       = row.length >= userPositions.length;
@@ -1965,10 +1956,8 @@
       const userIdx   = userPositions.indexOf(i);
       const answered  = userIdx < row.length;
       const isCurrent = userIdx === row.length;
-      const isWrong   = wrongAnswer != null && isCurrent && phase === 'wrong';
-      if (isWrong) {
-        swRow.appendChild(makeSw(wrongAnswer, 'wrong'));
-      } else if (answered) {
+      /* a wrong tap never lands in the switch row — the current slot just stays empty */
+      if (answered) {
         const isNew = justPlaced && userIdx === row.length - 1;
         const el = makeSw(row[userIdx], isNew ? 'new' : 'filled');
         if (isNew) el.style.animationDelay = delay;
@@ -1988,7 +1977,7 @@
     optArea.classList.remove('invisible', 'reveal', 'hidden-initially');
     cfg.options.forEach(opt => {
       const isCorrect      = opt === correct;
-      const isWrongOption  = phase === 'wrong-second' && opt === wrongAnswer;
+      const isWrongOption  = phase === 'wrong' && opt === wrongAnswer;
       const cls            = isWrongOption ? 'wrong-option'
                            : showHint && isCorrect ? 'hint'
                            : 'option';
@@ -2001,19 +1990,16 @@
      ══════════════════════════════════════════════════ */
   let tutorialMode = false;
 
-  /* read the shown numbers left→right: pop each switch and build up the spoken text
-     ("16" → "16, 14" → …). Calls done() when finished. */
+  /* read the shown numbers left→right: only pop each switch (and speak it) — the bot bar
+     keeps the "Let us read the pattern together." line, no numbers shown. */
   function tutorialReadNumbers(indices, done) {
     const cfg = ROWS_CONFIG[currentRow];
     const sws = document.querySelectorAll('#switch-row .sw');
-    const bt  = document.getElementById('bot-text');
-    bt.textContent = '';
     let k = 0;
     const readNext = () => {
       if (k >= indices.length) { setTimeout(() => { if (done) done(); }, 500); return; }
       const el = sws[indices[k]];
       if (el) { el.classList.remove('read-pop'); void el.offsetWidth; el.classList.add('read-pop'); }
-      bt.textContent += (k ? ', ' : '') + cfg.seq[indices[k]];
       playNumberVoice(cfg.seq[indices[k]]);
       sfxPop(540 + k * 28);
       k++;
@@ -2074,6 +2060,29 @@
     setTimeout(() => a.classList.add('glow'), 450);   /* then joins the glow */
   }
 
+  /* tutorial hand nudge — points at (and taps) the correct option to guide the player.
+     Re-attached after every render since renderQuestion rebuilds the option row. */
+  function hideTutorialHand() {
+    const h = document.getElementById('tutorial-hand');
+    if (h) h.remove();
+  }
+  function showTutorialHand() {
+    hideTutorialHand();
+    if (!tutorialMode || phase !== 'question') return;
+    const cfg = ROWS_CONFIG[currentRow];
+    const correct = getCorrect(cfg, grid[currentRow].length);
+    const opts = document.querySelectorAll('#options-area .sw');
+    let target = null;
+    cfg.options.forEach((opt, i) => { if (opt === correct && opts[i]) target = opts[i]; });
+    if (!target) return;
+    const host = target.querySelector('.tile') || target;
+    const hand = document.createElement('img');
+    hand.id = 'tutorial-hand';
+    hand.src = 'assets/nudge.webp';
+    hand.alt = '';
+    host.appendChild(hand);
+  }
+
   /* the full Level 1 tutorial script, chained through the voice queue */
   function runLevel1Tutorial() {
     tutorialMode = true;
@@ -2107,9 +2116,8 @@
     queueAction(finish => {
       _typeBotText('Tap the correct switch to continue the pattern.');
       glowAllArrows();                 /* the shown-number arrows all glow */
-      tutorialAnswerGaps = answerGaps;
-      tutorialAdvanceArrow(0);         /* arrow into the current (first) answer slot */
-      setTimeout(finish, 800);
+      tutorialAnswerGaps = answerGaps; /* answer arrows reveal one-per-correct-tap, none up front */
+      setTimeout(() => { finish(); showTutorialHand(); }, 800);   /* hand nudges the correct option */
     });
   }
 
@@ -2133,12 +2141,19 @@
     levelTimer = setTimeout(handleLevelStart, 2500);
   }
 
+  let _started = false;
   function handleStart() {
+    if (_started) return;          /* ignore rapid double-taps */
+    _started = true;
     /* unlock the Web Audio context on this user gesture so timed SFX can play later */
     try { const c = ac(); if (c.state === 'suspended') c.resume(); } catch (e) {}
     sfxClick();   /* audible PLAY press (context is now unlocked by this gesture) */
-    /* blast doors close over the title, then the gameplay entrance begins behind them */
-    playTransition(() => { handleLevelStart(); });
+    /* a little spark burst flies off the visible Play / Play Again button, then doors close */
+    const btn = document.querySelector('#screen-intro .btn-play:not(.hidden)')
+             || document.querySelector('#screen-intro .btn-play');
+    spawnSparks(btn, 16);
+    sfxPop(760);
+    setTimeout(() => { playTransition(() => { handleLevelStart(); }); }, 400);
   }
 
   function handleLevelStart() {
@@ -2239,6 +2254,7 @@
     clearVoiceQueue();
     stopConfetti();
     tutorialMode = false;   /* only Level 1 is the tutorial */
+    hideTutorialHand();
     document.getElementById('bot-text').textContent = 'Tap the correct switch.';
 
     /* clear the previous level's completion state — everything else stays put */
@@ -2298,10 +2314,11 @@
 
       if (grid[currentRow].length >= getUserPositions(cfg).length) {
         _setOptionsLock(true);
-        /* tutorial finished for this level — drop the pinned "−2" arrows */
+        /* reveal the final −2 arrow for the last correct tap; leave every arrow shown over the
+           completed pattern (they clear when the next level loads). */
+        if (tutorialMode) tutorialAdvanceArrow(grid[currentRow].length - 1);
         tutorialMode = false;
-        const _ha = document.getElementById('hint-arrows');
-        if (_ha) { _ha.classList.add('hidden'); _ha.innerHTML = ''; }
+        hideTutorialHand();
         sfxCorrect();
         phase = 'question';
         justPlaced = true; renderQuestion(); justPlaced = false;
@@ -2340,36 +2357,25 @@
         sfxCorrect();
         phase = 'question';
         justPlaced = true; renderQuestion(); justPlaced = false;
-        /* tutorial: the −2 arrow proceeds to the next empty slot on a correct pick */
-        if (tutorialMode) tutorialAdvanceArrow(grid[currentRow].length);
+        /* tutorial: reveal the −2 arrow for the slot just filled, then move the hand on */
+        if (tutorialMode) { tutorialAdvanceArrow(grid[currentRow].length - 1); showTutorialHand(); }
       }
     } else {
+      /* Incorrect: feedback lives only on the tapped OPTION tile — sparks + shake + yellow
+         glow + a wrong SFX. No switch-row placement, no vent flash, and NO voice line
+         (so the instruction never replays and the player can retry as soon as the shake ends). */
       sfxWrong();
-      queueBotText('Uh-oh! Try again!', voiceUhOh);
       wrongAnswer = val; streak = 0; wrongCount++;
-      if (wrongCount >= 2) {
-        /* second wrong: mark it, then GLOW the hint bulb — the player taps it for the hint */
-        phase = 'wrong-second';
+      phase = 'wrong';
+      hideTutorialHand();            /* hide the nudge during the wrong-shake */
+      renderQuestion();
+      spawnSparks(document.querySelector('#options-area .sw.wrong-option .tile'));
+      timer = setTimeout(() => {
+        wrongAnswer = null; phase = 'question';
+        if (wrongCount >= 2 && !showHint) armHint();   /* arm the hint bulb silently after 2 wrong */
         renderQuestion();
-        spawnSparks(document.querySelector('#options-area .sw.wrong-option .tile'));
-        timer = setTimeout(() => {
-          wrongAnswer = null; phase = 'question';
-          if (!showHint) {
-            armHint();
-            if (wrongCount === 2) queueBotText('Check the pattern again.', voiceHint);
-          }
-          renderQuestion();
-        }, 800);
-      } else {
-        phase = 'wrong';
-        renderQuestion();
-        spawnSparks(document.querySelector('#switch-row .sw.wrong .tile'));
-        timer = setTimeout(() => {
-          wrongAnswer = null; phase = 'question';
-          renderQuestion();
-          queueBotText('Tap the correct switch.', voiceTapCorrect);
-        }, 1400);
-      }
+        if (tutorialMode) showTutorialHand();          /* bring the nudge back for the retry */
+      }, 800);
     }
   }
 
@@ -2499,40 +2505,40 @@
     if (canvas && canvas.getContext) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
   }
 
-  /* final screen: play the end video, reveal Play Again when it finishes */
+  /* final screen: play the end video; when it finishes, go back to the title screen */
   function playEndVideo() {
     const v = document.getElementById('end-video');
-    const btn = document.getElementById('end-play-again');
-    btn.classList.add('hidden');
     if (!v) return;
     try { v.currentTime = 0; } catch (e) {}
-    v.onended = () => btn.classList.remove('hidden');
+    v.onended = () => playTransition(returnToTitle);
     const p = v.play();
-    if (p && p.catch) p.catch(() => btn.classList.remove('hidden'));  /* if autoplay is blocked, still offer replay */
+    if (p && p.catch) p.catch(() => playTransition(returnToTitle));  /* autoplay blocked → still return */
   }
 
-  function resetGame() {
+  /* after the ending video, reset everything and show the title with the Play Again button */
+  function returnToTitle() {
     if (timer) clearTimeout(timer);
     if (levelTimer) clearTimeout(levelTimer);
     clearVoiceQueue();
     stopConfetti();
-    document.getElementById('transition').classList.add('hidden');
-    document.getElementById('transition').classList.remove('closed');
-    const _ev = document.getElementById('end-video');
-    if (_ev) { try { _ev.pause(); _ev.currentTime = 0; } catch (e) {} }
+    const ev = document.getElementById('end-video');
+    if (ev) { try { ev.pause(); ev.currentTime = 0; } catch (e) {} }
     phase = 'intro'; currentRow = 0;
     wrongCount = 0; wrongAnswer = null;
     showHint = false; score = 0; streak = 0;
-    resetHint();
-    initGrid();
+    _started = false; tutorialMode = false;
+    resetHint(); hideTutorialHand(); initGrid();
     showScreen('intro');
+    /* on the title after a win, swap Play → Play Again */
+    document.getElementById('btn-play').classList.add('hidden');
+    document.getElementById('btn-play-again').classList.remove('hidden');
   }
-
 
   /* ── Boot: preload every asset behind the loading screen, then start ── */
   const PRELOAD_ASSETS = [
     'assets/title screen.webp',
     'assets/play button.webp',
+    'assets/play again.webp',
     'assets/robot dance.webp',
     'assets/Red button.webp',
     'assets/Green button.webp',
@@ -2565,41 +2571,42 @@
   /* Smooth GSAP attention effects for the title-screen PLAY button */
   function animatePlayButton() {
     if (!window.gsap) return;
-    const btn = document.querySelector('.btn-play');
-    if (!btn || btn._gsapInit) return;
-    btn._gsapInit = true;
-    const img = btn.querySelector('img');
-    if (!img) return;
-
     const DEPTH = 'drop-shadow(0 7px 14px rgba(0,16,32,0.55))';
-    const PERIOD = 1.9;   /* breathing + glow share one rhythm so they pulse together */
+    const PERIOD = 1.25;   /* faster, livelier pulse (breathing + glow share one rhythm) */
+    /* animate every play button (Play + Play Again) so both pulse and react to press */
+    document.querySelectorAll('.btn-play').forEach(btn => {
+      if (btn._gsapInit) return;
+      btn._gsapInit = true;
+      const img = btn.querySelector('img');
+      if (!img) return;
 
-    /* gentle breathing — soft sine, no jarring pop */
-    gsap.to(img, {
-      scale: 1.045, duration: PERIOD, repeat: -1, yoyo: true,
-      ease: 'sine.inOut', transformOrigin: '50% 50%'
+      /* stronger breathing — a clearly noticeable pulse */
+      gsap.to(img, {
+        scale: 1.1, duration: PERIOD, repeat: -1, yoyo: true,
+        ease: 'sine.inOut', transformOrigin: '50% 50%'
+      });
+
+      /* shaped neon glow that hugs the button (drop-shadow on the art), pulsing in sync */
+      const g = { blur: 16, a: 0.5 };
+      const paint = () => {
+        img.style.filter = 'drop-shadow(0 0 ' + g.blur.toFixed(1) + 'px rgba(12,228,249,' +
+                           g.a.toFixed(3) + ')) ' + DEPTH;
+      };
+      paint();
+      gsap.to(g, {
+        blur: 46, a: 1, duration: PERIOD, repeat: -1, yoyo: true,
+        ease: 'sine.inOut', onUpdate: paint
+      });
+
+      /* smooth hover / press — all eased through GSAP */
+      const to = (s, d, ease) => gsap.to(btn, { scale: s, duration: d, ease: ease, overwrite: 'auto' });
+      btn.addEventListener('mouseenter',  () => to(1.07, 0.35, 'power3.out'));
+      btn.addEventListener('mouseleave',  () => to(1.00, 0.55, 'power3.out'));
+      btn.addEventListener('mousedown',   () => to(0.94, 0.12, 'power2.out'));
+      btn.addEventListener('mouseup',     () => to(1.07, 0.30, 'power2.out'));
+      btn.addEventListener('touchstart',  () => to(0.94, 0.12, 'power2.out'), { passive: true });
+      btn.addEventListener('touchend',    () => to(1.00, 0.40, 'power2.out'));
     });
-
-    /* shaped neon glow that hugs the octagon (drop-shadow on the SVG), pulsing in sync */
-    const g = { blur: 12, a: 0.4 };
-    const paint = () => {
-      img.style.filter = 'drop-shadow(0 0 ' + g.blur.toFixed(1) + 'px rgba(12,228,249,' +
-                         g.a.toFixed(3) + ')) ' + DEPTH;
-    };
-    paint();
-    gsap.to(g, {
-      blur: 30, a: 0.85, duration: PERIOD, repeat: -1, yoyo: true,
-      ease: 'sine.inOut', onUpdate: paint
-    });
-
-    /* smooth hover / press — all eased through GSAP */
-    const to = (s, d, ease) => gsap.to(btn, { scale: s, duration: d, ease: ease, overwrite: 'auto' });
-    btn.addEventListener('mouseenter',  () => to(1.07, 0.35, 'power3.out'));
-    btn.addEventListener('mouseleave',  () => to(1.00, 0.55, 'power3.out'));
-    btn.addEventListener('mousedown',   () => to(0.94, 0.12, 'power2.out'));
-    btn.addEventListener('mouseup',     () => to(1.07, 0.30, 'power2.out'));
-    btn.addEventListener('touchstart',  () => to(0.94, 0.12, 'power2.out'), { passive: true });
-    btn.addEventListener('touchend',    () => to(1.00, 0.40, 'power2.out'));
   }
 
   /* wire hover + press sounds onto the menu buttons (the switch/option tiles already have them) */
@@ -2612,16 +2619,9 @@
         if (cd) return; sfxHover(); cd = true; setTimeout(() => { cd = false; }, 80);
       });
     };
-    const play  = document.querySelector('.btn-play');
-    const again = document.getElementById('end-play-again');
+    /* PLAY / PLAY AGAIN: press sound is played in handleStart() */
+    document.querySelectorAll('.btn-play').forEach(addHover);
     const hint  = document.getElementById('hint-btn');
-    addHover(play);    /* PLAY: the press sound is played in handleStart() */
-    if (again && !again._pressSfx) {
-      again._pressSfx = true;
-      addHover(again);
-      /* by the end screen the audio context is already unlocked, so the press sounds */
-      again.addEventListener('pointerdown', () => sfxClick());
-    }
     if (hint && !hint._wired) {
       hint._wired = true;
       addHover(hint);
