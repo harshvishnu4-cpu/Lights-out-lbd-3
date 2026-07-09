@@ -2552,9 +2552,10 @@
       btn._gsapInit = true;
       const img = btn.querySelector('img');
       if (!img) return;
+      const breath = btn.querySelector('.pb-inner') || img;   /* Play: octagon+label together */
 
       /* stronger breathing — a clearly noticeable pulse */
-      gsap.to(img, {
+      gsap.to(breath, {
         scale: 1.1, duration: PERIOD, repeat: -1, yoyo: true,
         ease: 'sine.inOut', transformOrigin: '50% 50%'
       });
