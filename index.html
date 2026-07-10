@@ -557,8 +557,9 @@
       0%,100% { box-shadow: 0 0 6px rgba(255,205,60,.5); }
       50%     { box-shadow: 0 0 26px 6px rgba(255,205,60,.95); }
     }
-    /* hide the bulb during the level-entrance cascade — it fades in with the rest */
+    /* hide the bulb during the level-entrance cascade — it fades in with the bot bar */
     #screen-question.intro #hint-btn { opacity: 0; }
+    #hint-btn.await-bar { opacity: 0; pointer-events: none; }
 
     /* ── Hint overlay: "+N" hop arrows above the switches (assets have +N baked in) ── */
     #hint-arrows {
@@ -2212,6 +2213,7 @@
     document.getElementById('byte-dance').classList.remove('show');
     document.getElementById('qrobot').style.opacity = '';
     resetHint();   /* bulb dim, no hop arrows at the start of the level */
+    document.getElementById('hint-btn').classList.add('await-bar');   /* bulb waits for the bot bar */
 
     /* the bot bar stays hidden until everything else has appeared */
     const botBar = document.getElementById('bot-bar');
@@ -2269,6 +2271,7 @@
           botBar.classList.remove('bar-hidden');
           void botBar.offsetWidth;
           botBar.classList.add('bar-reveal');
+          document.getElementById('hint-btn').classList.remove('await-bar');   /* bulb fades in with the bar */
           sfxBarOpen();
           setTimeout(() => {
             /* Level 1 is a guided tutorial (only the first level) */
