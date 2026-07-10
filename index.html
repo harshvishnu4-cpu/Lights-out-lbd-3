@@ -589,6 +589,23 @@
       border-radius: 8px;
       animation: hintGlow 1s ease-in-out infinite;
     }
+    /* tutorial guide — a bouncing arrow points at the current blank slot ("place it here") */
+    .sw.empty { position: relative; }
+    .blank-arrow {
+      position: absolute;
+      left: 50%; top: -50px;
+      width: 0; height: 0;
+      border-left: 19px solid transparent;
+      border-right: 19px solid transparent;
+      border-top: 28px solid #00e5ff;
+      filter: drop-shadow(0 0 9px rgba(0,229,255,0.95));
+      pointer-events: none;
+      animation: blankBounce 0.9s ease-in-out infinite;
+    }
+    @keyframes blankBounce {
+      0%,100% { transform: translateX(-50%) translateY(0);    }
+      50%     { transform: translateX(-50%) translateY(-11px); }
+    }
 
     /* ════════════════════════════════════════════
        LEVEL INTRO SCREEN
@@ -1318,6 +1335,45 @@
     });
   }
 
+  /* game complete — a happy triumphant fanfare (ascending run + a sparkly final chord) */
+  function sfxWin() {
+    const ctx = ac(), t0 = ctx.currentTime;
+    /* rising fanfare run */
+    [523, 659, 784, 1047, 1319].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(masterGain());
+      o.type = 'triangle';
+      o.frequency.value = f;
+      const t = t0 + i * 0.13;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.22, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+      o.start(t); o.stop(t + 0.44);
+    });
+    /* sustained bright C-major chord to finish */
+    const ct = t0 + 5 * 0.13 + 0.04;
+    [523, 659, 784, 1047].forEach(f => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(masterGain());
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, ct);
+      g.gain.exponentialRampToValueAtTime(0.15, ct + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, ct + 1.3);
+      o.start(ct); o.stop(ct + 1.4);
+    });
+    /* a little shimmer on top */
+    const s = ctx.createOscillator(), sg = ctx.createGain();
+    s.connect(sg); sg.connect(masterGain());
+    s.type = 'sine';
+    s.frequency.setValueAtTime(1568, ct);
+    s.frequency.exponentialRampToValueAtTime(2637, ct + 0.5);
+    sg.gain.setValueAtTime(0.0001, ct);
+    sg.gain.exponentialRampToValueAtTime(0.08, ct + 0.08);
+    sg.gain.exponentialRampToValueAtTime(0.0001, ct + 0.9);
+    s.start(ct); s.stop(ct + 1.0);
+  }
+
   /* switch dropping in — mechanical clack + an ascending electronic blip */
   function sfxSwitchAppear(i) {
     const ctx = ac(), t0 = ctx.currentTime;
@@ -1746,6 +1802,7 @@
   function armHint() {
     if (showHint) return;   /* already revealed for this slot */
     hintArmed = true;
+    hideTutorialGuide();    /* only the hint bulb should pulse — stop the answer glow */
     const b = document.getElementById('hint-btn');
     if (b) { b.classList.add('armed'); b.classList.remove('used'); }
   }
@@ -2042,18 +2099,24 @@
     setTimeout(() => a.classList.add('glow'), 450);   /* then joins the glow */
   }
 
-  /* tutorial guide — glow the correct option so the player knows which switch to tap.
-     Re-applied after every render since renderQuestion rebuilds the option row. */
+  /* tutorial guide — glow the correct option AND point an arrow at the current blank slot.
+     Re-applied after every render since renderQuestion rebuilds the switch + option rows. */
   function hideTutorialGuide() {
     document.querySelectorAll('#options-area .sw.tut-guide').forEach(el => el.classList.remove('tut-guide'));
+    document.querySelectorAll('#switch-row .blank-arrow').forEach(el => el.remove());
   }
   function showTutorialGuide() {
     hideTutorialGuide();
-    if (!tutorialMode || phase !== 'question') return;
+    /* if the hint bulb is pulsing, it gets exclusive attention — no answer glow / arrow */
+    if (!tutorialMode || phase !== 'question' || hintArmed) return;
     const cfg = ROWS_CONFIG[currentRow];
     const correct = getCorrect(cfg, grid[currentRow].length);
     const opts = document.querySelectorAll('#options-area .sw');
     cfg.options.forEach((opt, i) => { if (opt === correct && opts[i]) opts[i].classList.add('tut-guide'); });
+    /* arrow over the current blank slot to show where the answer goes */
+    const blank = document.querySelector('#switch-row .sw.empty.next-slot')
+               || document.querySelector('#switch-row .sw.empty');
+    if (blank) blank.appendChild(Object.assign(document.createElement('div'), { className: 'blank-arrow' }));
   }
 
   /* the full Level 1 tutorial script, chained through the voice queue */
@@ -2312,7 +2375,8 @@
         const advance = () => {
           timer = setTimeout(() => {
             if (isLast) {
-              playTransition(() => { showScreen('complete'); playEndVideo(); });
+              /* GAME complete — happy fanfare + a fresh confetti burst as the end screen appears */
+              playTransition(() => { showScreen('complete'); sfxWin(); fireConfetti(); playEndVideo(); });
             } else {
               /* blast-door transition, then the next level loads in place (only options animate) */
               playTransition(() => { currentRow++; loadLevelInPlace(); });
