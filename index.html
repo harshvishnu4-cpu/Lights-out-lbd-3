@@ -1205,8 +1205,9 @@
     resetIdle();   /* keep watching — nudge again if still idle */
   }
 
-  /* any real activity resets the idle countdown */
-  ['pointerdown', 'pointermove', 'keydown', 'touchstart'].forEach(ev =>
+  /* a real tap/keypress resets the idle countdown — NOT plain mouse movement
+     (otherwise the ever-jittering desktop cursor would keep it from ever firing) */
+  ['pointerdown', 'touchstart', 'keydown'].forEach(ev =>
     window.addEventListener(ev, resetIdle, { passive: true }));
 
   /* typewriter the dialogue out, blipping softly as the character "speaks" */
