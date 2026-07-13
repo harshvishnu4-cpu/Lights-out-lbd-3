@@ -465,15 +465,16 @@
     }
     #options-area.invisible { visibility: hidden; pointer-events: none; }
 
-    /* Inactivity nudge — the options bounce (in a wave) to draw an idle player back */
+    /* Inactivity nudge — the options bounce (in a wave), rest, and repeat for ~5.5s */
     @keyframes idleBounce {
-      0%, 100% { transform: translateY(0); }
-      35%      { transform: translateY(-18px); }
-      55%      { transform: translateY(0); }
-      72%      { transform: translateY(-8px); }
-      88%      { transform: translateY(0); }
+      0%   { transform: translateY(0); }
+      12%  { transform: translateY(-18px); }
+      24%  { transform: translateY(0); }
+      33%  { transform: translateY(-8px); }
+      42%  { transform: translateY(0); }
+      100% { transform: translateY(0); }   /* rest for the rest of the cycle */
     }
-    #options-area.idle-nudge .sw { animation: idleBounce 0.9s cubic-bezier(0.3,1,0.5,1); }
+    #options-area.idle-nudge .sw { animation: idleBounce 1.3s cubic-bezier(0.3,1,0.5,1) infinite; }
     #options-area.idle-nudge .sw:nth-child(1) { animation-delay: 0s; }
     #options-area.idle-nudge .sw:nth-child(2) { animation-delay: 0.07s; }
     #options-area.idle-nudge .sw:nth-child(3) { animation-delay: 0.14s; }
@@ -1170,16 +1171,23 @@
     const el = document.getElementById('options-area');
     if (el) el.style.pointerEvents = locked ? 'none' : '';
     /* pause the idle watch while options are locked; restart it when the player's turn begins */
-    if (locked) { if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; } }
+    if (locked) { if (_idleTimer) { clearTimeout(_idleTimer); _idleTimer = null; } _stopNudge(); }
     else resetIdle();
   }
 
-  /* ── Inactivity nudge: if the player is idle ~10s during their turn, bounce the options ── */
-  let _idleTimer = null;
-  const IDLE_MS = 10000;
+  /* ── Inactivity nudge: idle ~10s during the player's turn → bounce the options for ~5.5s ── */
+  let _idleTimer = null, _nudgeStopTimer = null;
+  const IDLE_MS = 10000, NUDGE_MS = 5500;   /* wait 10s, then play for ~5.5s */
+
+  function _stopNudge() {
+    if (_nudgeStopTimer) { clearTimeout(_nudgeStopTimer); _nudgeStopTimer = null; }
+    const oa = document.getElementById('options-area');
+    if (oa) oa.classList.remove('idle-nudge');
+  }
 
   function resetIdle() {
     if (_idleTimer) clearTimeout(_idleTimer);
+    _stopNudge();                              /* any activity stops a running nudge */
     _idleTimer = setTimeout(idleNudge, IDLE_MS);
   }
 
@@ -1196,13 +1204,15 @@
       const up  = getUserPositions(cfg);
       const rowFull = grid[currentRow].length >= (up ? up.length : TOTAL);
       if (!rowFull) {
-        optArea.classList.remove('idle-nudge'); void optArea.offsetWidth;   /* restart the animation */
+        optArea.classList.remove('idle-nudge'); void optArea.offsetWidth;   /* restart the loop */
         optArea.classList.add('idle-nudge');
-        setTimeout(() => optArea.classList.remove('idle-nudge'), 1100);
         try { sfxHover(); } catch (e) {}   /* soft blip to draw attention */
+        /* bounce for ~5.5s, then wait another 10s before nudging again */
+        _nudgeStopTimer = setTimeout(() => { _nudgeStopTimer = null; _stopNudge(); resetIdle(); }, NUDGE_MS);
+        return;
       }
     }
-    resetIdle();   /* keep watching — nudge again if still idle */
+    resetIdle();   /* not the player's turn yet — keep watching */
   }
 
   /* a real tap/keypress resets the idle countdown — NOT plain mouse movement
