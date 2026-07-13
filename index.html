@@ -590,23 +590,6 @@
       border-radius: 8px;
       animation: hintGlow 1s ease-in-out infinite;
     }
-    /* tutorial guide — a bouncing arrow points at the current blank slot ("place it here") */
-    .sw.empty { position: relative; }
-    .blank-arrow {
-      position: absolute;
-      left: 50%; top: -50px;
-      width: 0; height: 0;
-      border-left: 19px solid transparent;
-      border-right: 19px solid transparent;
-      border-top: 28px solid #00e5ff;
-      filter: drop-shadow(0 0 9px rgba(0,229,255,0.95));
-      pointer-events: none;
-      animation: blankBounce 0.9s ease-in-out infinite;
-    }
-    @keyframes blankBounce {
-      0%,100% { transform: translateX(-50%) translateY(0);    }
-      50%     { transform: translateX(-50%) translateY(-11px); }
-    }
 
     /* ════════════════════════════════════════════
        LEVEL INTRO SCREEN
@@ -1143,6 +1126,9 @@
   const NUMBER_VOICES = {};
   NUMBER_FILES.forEach(n => { NUMBER_VOICES[n] = new Audio('audio/' + n + '.ogg'); });
 
+  /* ── Current-flow clip — the electricity surge/zap when the completed pattern powers on ── */
+  const currentFlowZap = new Audio('audio/electricity.mp3'); currentFlowZap.preload = 'auto';
+
   /* speak a number when the player places it (silently skips numbers with no clip) */
   function playNumberVoice(n) {
     const snd = NUMBER_VOICES[n];
@@ -1373,6 +1359,32 @@
     sg.gain.exponentialRampToValueAtTime(0.08, ct + 0.08);
     sg.gain.exponentialRampToValueAtTime(0.0001, ct + 0.9);
     s.start(ct); s.stop(ct + 1.0);
+  }
+
+  /* hint bulb starts glowing — a soft magical shimmer to draw attention */
+  function sfxHintGlow() {
+    const ctx = ac(), t0 = ctx.currentTime;
+    [880, 1174].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(masterGain());
+      o.type = 'sine';
+      o.frequency.value = f;
+      const t = t0 + i * 0.1;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.13, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      o.start(t); o.stop(t + 0.52);
+    });
+    /* rising sparkle on top */
+    const s = ctx.createOscillator(), sg = ctx.createGain();
+    s.connect(sg); sg.connect(masterGain());
+    s.type = 'triangle';
+    s.frequency.setValueAtTime(1760, t0 + 0.14);
+    s.frequency.exponentialRampToValueAtTime(2637, t0 + 0.42);
+    sg.gain.setValueAtTime(0.0001, t0 + 0.14);
+    sg.gain.exponentialRampToValueAtTime(0.07, t0 + 0.2);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+    s.start(t0 + 0.14); s.stop(t0 + 0.62);
   }
 
   /* switch dropping in — mechanical clack + an ascending electronic blip */
@@ -1633,7 +1645,22 @@
 
   /* current surge — loud electric power-up that flows through the vent + pipes (attention grabber).
      Routed direct to destination (bypassing the master limiter) so it punches through clearly. */
+  /* current flows through the fixed pattern — play the electricity zap;
+     fall back to the synthesized surge if the file can't play. */
   function sfxCurrentFlow() {
+    try {
+      currentFlowZap.currentTime = 0;
+      const p = currentFlowZap.play();
+      if (p && p.catch) p.catch(() => _sfxCurrentFlowSynth());
+    } catch (e) { _sfxCurrentFlowSynth(); }
+  }
+
+  /* stop the current-flow zap (called when the level advances / game ends) */
+  function stopCurrentFlow() {
+    try { currentFlowZap.pause(); currentFlowZap.currentTime = 0; } catch (e) {}
+  }
+
+  function _sfxCurrentFlowSynth() {
     const ctx = ac(), t0 = ctx.currentTime;
     const out = ctx.createGain(); out.gain.value = 1.0; out.connect(ctx.destination);
 
@@ -1806,6 +1833,7 @@
     hideTutorialGuide();    /* only the hint bulb should pulse — stop the answer glow */
     const b = document.getElementById('hint-btn');
     if (b) { b.classList.add('armed'); b.classList.remove('used'); }
+    sfxHintGlow();          /* soft shimmer as the bulb starts glowing */
   }
 
   /* clear all hint state — called on new slot / level / reset.
@@ -2016,11 +2044,9 @@
     if (isRowComplete) { optArea.classList.add('invisible'); return; }
     optArea.classList.remove('invisible', 'reveal', 'hidden-initially');
     cfg.options.forEach(opt => {
-      const isCorrect      = opt === correct;
       const isWrongOption  = phase === 'wrong' && opt === wrongAnswer;
-      const cls            = isWrongOption ? 'wrong-option'
-                           : showHint && isCorrect ? 'hint'
-                           : 'option';
+      /* hint no longer glows the option — the −N hop arcs are the hint */
+      const cls            = isWrongOption ? 'wrong-option' : 'option';
       optArea.appendChild(makeSw(opt, cls, isWrongOption ? null : () => handleAnswer(opt)));
     });
   }
@@ -2086,38 +2112,35 @@
     document.querySelectorAll('#hint-arrows .hint-arrow').forEach(a => a.classList.add('glow'));
   }
 
-  /* the −2 arrows over the empty answer slots; revealed one at a time as the player
-     places each correct switch, so the arrow "proceeds" with the pattern. */
-  let tutorialAnswerGaps = [];
-  function tutorialAdvanceArrow(n) {
-    if (!tutorialMode || n < 0 || n >= tutorialAnswerGaps.length) return;
-    const wrap = document.getElementById('hint-arrows');
-    if (!wrap || wrap.querySelector('[data-gap="' + tutorialAnswerGaps[n] + '"]')) return;
-    const a = makeHopArrow(ROWS_CONFIG[currentRow], tutorialAnswerGaps[n]);
-    a.dataset.gap = tutorialAnswerGaps[n];
-    wrap.appendChild(a);                       /* pops in via hintArrowIn */
-    sfxPop(660);
-    setTimeout(() => a.classList.add('glow'), 450);   /* then joins the glow */
-  }
-
   /* tutorial guide — glow the correct option AND point an arrow at the current blank slot.
      Re-applied after every render since renderQuestion rebuilds the switch + option rows. */
   function hideTutorialGuide() {
     document.querySelectorAll('#options-area .sw.tut-guide').forEach(el => el.classList.remove('tut-guide'));
-    document.querySelectorAll('#switch-row .blank-arrow').forEach(el => el.remove());
   }
   function showTutorialGuide() {
     hideTutorialGuide();
-    /* if the hint bulb is pulsing, it gets exclusive attention — no answer glow / arrow */
-    if (!tutorialMode || phase !== 'question' || hintArmed) return;
+    if (!tutorialMode || phase !== 'question') return;
     const cfg = ROWS_CONFIG[currentRow];
     const correct = getCorrect(cfg, grid[currentRow].length);
     const opts = document.querySelectorAll('#options-area .sw');
     cfg.options.forEach((opt, i) => { if (opt === correct && opts[i]) opts[i].classList.add('tut-guide'); });
-    /* arrow over the current blank slot to show where the answer goes */
-    const blank = document.querySelector('#switch-row .sw.empty.next-slot')
-               || document.querySelector('#switch-row .sw.empty');
-    if (blank) blank.appendChild(Object.assign(document.createElement('div'), { className: 'blank-arrow' }));
+  }
+
+  /* reveal the −2 arc hopping INTO the current blank slot (called on each correct tap so the
+     arc appears for the next blank; the last blanks' arcs are not shown up front). */
+  function revealCurrentBlankArc() {
+    if (!tutorialMode) return;
+    const cfg = ROWS_CONFIG[currentRow];
+    const pos = getUserPositions(cfg);
+    if (grid[currentRow].length >= pos.length) return;          /* no blank left */
+    const gap = pos[grid[currentRow].length] - 1;               /* gap into the current blank */
+    const wrap = document.getElementById('hint-arrows');
+    if (!wrap || wrap.querySelector('[data-gap="' + gap + '"]')) return;   /* already shown */
+    const a = makeHopArrow(cfg, gap);
+    a.dataset.gap = gap;
+    wrap.appendChild(a);                       /* pops in via hintArrowIn */
+    sfxPop(660);
+    setTimeout(() => a.classList.add('glow'), 400);   /* then joins the glowing arcs */
   }
 
   /* the full Level 1 tutorial script, chained through the voice queue */
@@ -2125,9 +2148,11 @@
     tutorialMode = true;
     const cfg   = ROWS_CONFIG[0];
     const shown = cfg.prefilled.slice().sort((a, b) => a - b);   /* [0,1,2,3,4] */
-    const shownGaps  = shown.slice(0, -1);                       /* [0,1,2,3] — between shown numbers */
-    const answerGaps = [];                                        /* [4,5,6] — into the empty answer slots */
-    for (let i = shown[shown.length - 1]; i < cfg.seq.length - 1; i++) answerGaps.push(i);
+    /* gaps over the shown numbers PLUS the arc into the FIRST blank (0..4);
+       the arcs into the remaining blanks appear one-by-one as the player answers. */
+    const firstBlankGap = getUserPositions(cfg)[0] - 1;
+    const initGaps = [];
+    for (let i = 0; i <= firstBlankGap; i++) initGaps.push(i);
 
     const wrap = document.getElementById('hint-arrows');
     wrap.classList.remove('hidden'); wrap.innerHTML = '';
@@ -2137,10 +2162,10 @@
     queueBotText('Let us read the pattern together.');
     /* read: "16, 14, 12, 10, 8" — popping each shown switch */
     queueAction(finish => tutorialReadNumbers(shown, finish));
-    /* "We are subtracting 2 at each step." — show −2 arrows over the shown gaps one by one */
+    /* "We are subtracting 2 at each step." — show the −2 arcs over the shown numbers + first blank */
     queueAction(finish => {
       _typeBotText('We are subtracting 2 at each step.');
-      tutorialShowArrows(shownGaps, () => setTimeout(finish, 700));
+      tutorialShowArrows(initGaps, () => setTimeout(finish, 700));
     });
     /* "We keep subtracting the same number!" — glow all the arrows together */
     queueAction(finish => {
@@ -2148,13 +2173,11 @@
       glowAllArrows();
       setTimeout(finish, 2200);
     });
-    /* "Tap the correct switch to continue the pattern." — reveal ONLY the arrow into the
-       first empty slot; the rest proceed as the player places each correct switch. */
+    /* "Tap the correct switch to continue the pattern." — glow the correct option */
     queueAction(finish => {
       _typeBotText('Tap the correct switch to continue the pattern.');
-      glowAllArrows();                 /* the shown-number arrows all glow */
-      tutorialAnswerGaps = answerGaps; /* answer arrows reveal one-per-correct-tap, none up front */
-      setTimeout(() => { finish(); showTutorialGuide(); }, 800);   /* glow the correct option */
+      glowAllArrows();
+      setTimeout(() => { finish(); showTutorialGuide(); }, 800);
     });
   }
 
@@ -2271,7 +2294,7 @@
           botBar.classList.remove('bar-hidden');
           void botBar.offsetWidth;
           botBar.classList.add('bar-reveal');
-          document.getElementById('hint-btn').classList.remove('await-bar');   /* bulb fades in with the bar */
+          /* Level 1 is the tutorial — the hint button stays hidden (shown from Level 2 on) */
           sfxBarOpen();
           setTimeout(() => {
             /* Level 1 is a guided tutorial (only the first level) */
@@ -2306,6 +2329,7 @@
     document.getElementById('byte-dance').classList.remove('show');
     document.getElementById('qrobot').style.opacity = '';
     resetHint();   /* clear any bulb glow / hop arrows from the previous level */
+    document.getElementById('hint-btn').classList.remove('await-bar');   /* hint button appears in the real game */
     const botBar = document.getElementById('bot-bar');
     botBar.classList.remove('bar-hidden');     /* the text bar stays */
     botBar.style.visibility = 'visible';
@@ -2353,9 +2377,7 @@
 
       if (grid[currentRow].length >= getUserPositions(cfg).length) {
         _setOptionsLock(true);
-        /* reveal the final −2 arrow for the last correct tap; leave every arrow shown over the
-           completed pattern (they clear when the next level loads). */
-        if (tutorialMode) tutorialAdvanceArrow(grid[currentRow].length - 1);
+        /* every −2 arc is already shown over the completed pattern; they clear on the next level */
         tutorialMode = false;
         hideTutorialGuide();
         sfxCorrect();
@@ -2377,6 +2399,7 @@
         const isLast = currentRow + 1 >= ROWS_CONFIG.length;
         const advance = () => {
           timer = setTimeout(() => {
+            stopCurrentFlow();   /* end the energy hum before the transition */
             if (isLast) {
               /* GAME complete — happy fanfare + a fresh confetti burst as the end screen appears */
               playTransition(() => { showScreen('complete'); sfxWin(); fireConfetti(); playEndVideo(); });
@@ -2397,8 +2420,8 @@
         sfxCorrect();
         phase = 'question';
         justPlaced = true; renderQuestion(); justPlaced = false;
-        /* tutorial: reveal the −2 arrow for the slot just filled, then move the hand on */
-        if (tutorialMode) { tutorialAdvanceArrow(grid[currentRow].length - 1); showTutorialGuide(); }
+        /* tutorial: reveal the arc into the next blank, then move the guide glow */
+        if (tutorialMode) { revealCurrentBlankArc(); showTutorialGuide(); }
       }
     } else {
       /* Incorrect: feedback lives only on the tapped OPTION tile — sparks + shake + yellow
@@ -2412,7 +2435,7 @@
       spawnSparks(document.querySelector('#options-area .sw.wrong-option .tile'));
       timer = setTimeout(() => {
         wrongAnswer = null; phase = 'question';
-        if (wrongCount >= 2 && !showHint) armHint();   /* arm the hint bulb silently after 2 wrong */
+        if (wrongCount >= 2 && !showHint && !tutorialMode) armHint();   /* arm hint after 2 wrong (not in tutorial) */
         renderQuestion();
         if (tutorialMode) showTutorialGuide();         /* restore the guide glow for the retry */
       }, 800);
@@ -2561,6 +2584,7 @@
     if (levelTimer) clearTimeout(levelTimer);
     clearVoiceQueue();
     stopConfetti();
+    stopCurrentFlow();
     const ev = document.getElementById('end-video');
     if (ev) { try { ev.pause(); ev.currentTime = 0; } catch (e) {} }
     phase = 'intro'; currentRow = 0;
