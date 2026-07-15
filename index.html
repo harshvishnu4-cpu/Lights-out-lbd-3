@@ -1193,9 +1193,10 @@
 
   function idleNudge() {
     _idleTimer = null;
-    /* only nudge when it's the player's turn and the options are tappable */
+    /* only nudge when it's the player's turn and the options are tappable — never in the tutorial */
     const optArea = document.getElementById('options-area');
-    const canTap = optArea && optArea.style.pointerEvents !== 'none' &&
+    const canTap = !tutorialMode &&
+                   optArea && optArea.style.pointerEvents !== 'none' &&
                    !optArea.classList.contains('hidden-initially') &&
                    !optArea.classList.contains('invisible') &&
                    (phase === 'question' || phase === 'hint');
@@ -1895,8 +1896,9 @@
     hintArmed = true;
     hideTutorialGuide();    /* only the hint bulb should pulse — stop the answer glow */
     const b = document.getElementById('hint-btn');
-    if (b) { b.classList.add('armed'); b.classList.remove('used'); }
-    sfxHintGlow();          /* soft shimmer as the bulb starts glowing */
+    /* the button is hidden until now — reveal it (fades in) and glow ("same animation") */
+    if (b) { b.classList.remove('await-bar', 'used'); b.classList.add('armed'); }
+    sfxHintGlow();          /* soft shimmer as the bulb appears + glows */
   }
 
   /* clear all hint state — called on new slot / level / reset.
@@ -1904,7 +1906,8 @@
   function resetHint() {
     hintArmed = false;
     const b = document.getElementById('hint-btn');
-    if (b) b.classList.remove('armed', 'used');
+    /* keep the button hidden until 2 wrong taps arm it again */
+    if (b) { b.classList.remove('armed', 'used'); b.classList.add('await-bar'); }
     if (tutorialMode) return;
     const w = document.getElementById('hint-arrows');
     if (w) { w.classList.add('hidden'); w.innerHTML = ''; }
@@ -2391,8 +2394,7 @@
     document.getElementById('well-done-msg').classList.add('hidden');
     document.getElementById('byte-dance').classList.remove('show');
     document.getElementById('qrobot').style.opacity = '';
-    resetHint();   /* clear any bulb glow / hop arrows from the previous level */
-    document.getElementById('hint-btn').classList.remove('await-bar');   /* hint button appears in the real game */
+    resetHint();   /* hint stays hidden until 2 wrong taps arm it */
     const botBar = document.getElementById('bot-bar');
     botBar.classList.remove('bar-hidden');     /* the text bar stays */
     botBar.style.visibility = 'visible';
